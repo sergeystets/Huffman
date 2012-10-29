@@ -144,30 +144,34 @@ def decode(readPath, savePath):
         ifs.seek(4)
         tree = cPickle.loads(ifs.read(tree_size))
                
-        # restore data
+        # restore information about unnecessary zeroes
         unnecessary_zeros = int(struct.unpack('c', ifs.read()[-1:])[0])
+        
+        # restore data
         ifs.seek(4 + tree_size)
         data = ifs.read()[:-1]
                
-        # build code by text
         code = []
         bits = ""
         ch = ""
         path = ""
         remaining_bits = ""
+        # loop over data
         for i in range(len(data)):                
+            # open file for writing
             with open(savePath, "ab") as ofs:
-                bits = bin(ord(list(data)[i]))[2:]  # take bits
-                if len(bits) < 8:  # check size
+                # take bits
+                bits = bin(ord(list(data)[i]))[2:]  
+                # check size
+                if len(bits) < 8:  
                     # add zeroes to fit byte length(8 bits)
                     bits = "{0:0>8}".format("".join(bits))
-                    # search character by code
+                # add remaining bits if any    
                 bits = remaining_bits + bits
-                
-                #if last iteration delete unnecessary zeroes
-                if i is len(data)-1:
-                    bits=bits[:-unnecessary_zeros]
-                
+                # delete unnecessary zeroes if last iteration is reached
+                if i is len(data) - 1:
+                    bits = bits[:-unnecessary_zeros]
+                # search character by bits
                 for bit in bits: 
                     path += bit
                     ch = findChar(tree, path)
@@ -175,7 +179,7 @@ def decode(readPath, savePath):
                     if ch:
                         ofs.write(ch)
                         path = "" 
-                        remaining_bits=""
+                        remaining_bits = ""
                     else:  
                         # if the given portion of code is not enough to find char
                         # store the remaining bits 
