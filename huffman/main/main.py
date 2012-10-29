@@ -135,7 +135,7 @@ def code(tree, codeDict, readPath, savePath):
                 
 
 # decode file 
-def decode(readPath, savePath):
+def decode(readPath, savePath):   
     with open(readPath, 'rb') as ifs:
         # get tree size
         tree_size = int(struct.unpack("i", ifs.read(4))[0])
@@ -151,29 +151,36 @@ def decode(readPath, savePath):
                
         # build code by text
         code = []
-        for i in range(len(data)):
-            code.append((bin(ord(list(data)[i])))[2:])
-        
-        # convert list of codes to string    
-        code_string = ""
-        for i in range(len(code)):
-            #fix the code size: must be 8 'bits'
-            code_string += "{0:0>8}".format("".join(code[i])) if (len(code[i])<8)  else code[i]
-            
-        # remove unnecessary 'bits'
-        code_string = code_string[:-unnecessary_zeros]
-            
-        # restore original text and write it to file
-        with open(savePath, "wb") as ofs:
-            ch = None
-            path = ""
-            for i in code_string:
-                path += i
-                ch = findChar(tree, path)
-                if ch:
-                    ofs.write(ch)
-                    path = ""
+        bits = ""
+        ch = ""
+        path = ""
+        remaining_bits = ""
+        for i in range(len(data)):                
+            with open(savePath, "ab") as ofs:
+                bits = bin(ord(list(data)[i]))[2:]  # take bits
+                if len(bits) < 8:  # check size
+                    # add zeroes to fit byte length(8 bits)
+                    bits = "{0:0>8}".format("".join(bits))
+                    # search character by code
+                bits = remaining_bits + bits
                 
+                #if last iteration delete unnecessary zeroes
+                if i is len(data)-1:
+                    bits=bits[:-unnecessary_zeros]
+                
+                for bit in bits: 
+                    path += bit
+                    ch = findChar(tree, path)
+                    # write to file if found any character
+                    if ch:
+                        ofs.write(ch)
+                        path = "" 
+                        remaining_bits=""
+                    else:  
+                        # if the given portion of code is not enough to find char
+                        # store the remaining bits 
+                        remaining_bits = path
+                path = ""
 
 # search char in Huffman tree by given path
 def findChar(root, path):
@@ -194,9 +201,17 @@ def findChar(root, path):
             
 # main method
 if __name__ == "__main__":
+    print "build tree...."
     tree = buildHalfmanTree("file.txt")
+    print "done"
     codeDict = {}
+    print "build code...."
     buildCode(codeDict, tree)
+    print "done "
+    print "coding file....."
     code(tree, codeDict, "file.txt", "file.compressed.txt")
+    print "done"
+    print "decoding file...."
     decode("file.compressed.txt", "file.decompressed.txt")
+    print "done"
 
