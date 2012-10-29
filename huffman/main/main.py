@@ -11,6 +11,7 @@ import struct
 import cPickle
 from collections import Counter
 
+
 # Class TreeNode represents a node for a Huffman tree
 class TreeNode:
     def __init__(self, freq, char='', left=None, right=None):
@@ -45,6 +46,7 @@ def buildFreqTable(path):
 
     return freqs
 
+
 # build Huffman tree from file given in path parameter
 def buildHalfmanTree(path):
     # build descending ordered queue of tree nodes
@@ -72,6 +74,7 @@ def buildHalfmanTree(path):
     return root
 
 
+# build code using code dictionary
 def buildCode(codeDict, root, code=''):
     # if node is None return'#
     if root is None:
@@ -83,11 +86,12 @@ def buildCode(codeDict, root, code=''):
         codeDict[root.char] = code
 
     # else call buildCode for left and for right child node
-    buildCode(codeDict, root.left, code + '0')
-    buildCode(codeDict, root.right, code + '1')
+    buildCode(codeDict, root.left, code + '1')
+    buildCode(codeDict, root.right, code + '0')
+
 
 # code file using Huffman algorithm
-def code(tree, codeDict, readPath, savePath):
+def code(tree, codeDict, readPath, savePath):  
     BUFSIZE = 512
     writeBuf = []
 
@@ -97,7 +101,7 @@ def code(tree, codeDict, readPath, savePath):
         tree_dumped_size = len(tree_dumped)
         ofs.write(struct.pack("i", tree_dumped_size))
         ofs.write(str(tree_dumped))
-
+       
         # open file for writing
         with open(readPath, 'rb') as ifs:
             write_tmp = []
@@ -107,11 +111,10 @@ def code(tree, codeDict, readPath, savePath):
                 for char in readBuf:
                     code = codeDict[char]  # get code for char
                     write_tmp.extend(code)  # save it
-
-                    if len(write_tmp) > 8:  # if code length is longer than byte length
+                    
+                    if len(write_tmp) > 8:  # if code length is longer than byte length                     
                         writeBuf.append(chr(int("".join(write_tmp[:8]), 2)))  # convert 8 'bits' of code to byte 
                         write_tmp = write_tmp[8:]  # and save the remaining 'bits'
-
                     if len(writeBuf) > BUFSIZE:  # if write buffer is full 
                         ofs.write("".join(writeBuf))  # write it to file
                         writeBuf = []  # clear write buffer
@@ -124,21 +127,76 @@ def code(tree, codeDict, readPath, savePath):
                 writeBuf.append(chr(int("{0:0<8}".format("".join(write_tmp)), 2)))
                 # add information of how many 0s have been added
                 writeBuf.append(struct.pack("c", str((8 - len(write_tmp)))))  
-
+                
             # write to file
             if writeBuf:
                 ofs.write("".join(writeBuf))
                 writeBuf = []
+                
 
-
-#decode file 
+# decode file 
 def decode(readPath, savePath):
-    return
-    
+    with open(readPath, 'rb') as ifs:
+        # get tree size
+        tree_size = int(struct.unpack("i", ifs.read(4))[0])
+                
+        # restore Huffman tree
+        ifs.seek(4)
+        tree = cPickle.loads(ifs.read(tree_size))
+               
+        # restore data
+        unnecessary_zeros = int(struct.unpack('c', ifs.read()[-1:])[0])
+        ifs.seek(4 + tree_size)
+        data = ifs.read()[:-1]
+               
+        # build code by text
+        code = []
+        for i in range(len(data)):
+            code.append((bin(ord(list(data)[i])))[2:])
+        
+        # convert list of codes to string    
+        code_string = ""
+        for i in range(len(code)):
+            #fix the code size: must be 8 'bits'
+            code_string += "{0:0>8}".format("".join(code[i])) if (len(code[i])<8)  else code[i]
+            
+        # remove unnecessary 'bits'
+        code_string = code_string[:-unnecessary_zeros]
+            
+        # restore original text and write it to file
+        with open(savePath, "wb") as ofs:
+            ch = None
+            path = ""
+            for i in code_string:
+                path += i
+                ch = findChar(tree, path)
+                if ch:
+                    ofs.write(ch)
+                    path = ""
+                
 
+# search char in Huffman tree by given path
+def findChar(root, path):
+    if root is None:
+        return None
+    
+    if root.char:
+        return root.char
+    
+    if not path:
+        return 
+   
+    if path[0] == '1':
+        return findChar(root.left, path[1:])
+    else:
+        return  findChar(root.right, path[1:])
+    
+            
+# main method
 if __name__ == "__main__":
     tree = buildHalfmanTree("file.txt")
     codeDict = {}
     buildCode(codeDict, tree)
     code(tree, codeDict, "file.txt", "file.compressed.txt")
+    decode("file.compressed.txt", "file.decompressed.txt")
 
