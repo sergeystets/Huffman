@@ -6,6 +6,7 @@ Created on 01.10.2012
 #!/usr/bin/env python2.7
 # coding: utf-8
 
+import os
 import heapq
 import struct
 import cPickle
@@ -112,7 +113,7 @@ def code(tree, codeDict, readPath, savePath):
                     code = codeDict[char]  # get code for char
                     write_tmp.extend(code)  # save it
                     
-                    if len(write_tmp) > 8:  # if code length is longer than byte length                     
+                    while len(write_tmp) >= 8:  # if code length is longer than byte length
                         writeBuf.append(chr(int("".join(write_tmp[:8]), 2)))  # convert 8 'bits' of code to byte 
                         write_tmp = write_tmp[8:]  # and save the remaining 'bits'
                     if len(writeBuf) > BUFSIZE:  # if write buffer is full 
@@ -136,55 +137,63 @@ def code(tree, codeDict, readPath, savePath):
 
 # decode file 
 def decode(readPath, savePath):   
+    BUFSIZE = 512
+
     with open(readPath, 'rb') as ifs:
         # get tree size
-        tree_size = int(struct.unpack("i", ifs.read(4))[0])
+        tree_size = struct.unpack("i", ifs.read(4))[0]
                 
         # restore Huffman tree
-        ifs.seek(4)
         tree = cPickle.loads(ifs.read(tree_size))
                
         # restore information about unnecessary zeroes
-        unnecessary_zeros = int(struct.unpack('c', ifs.read()[-1:])[0])
-        
-        # restore data
+        ifs.seek(-1, os.SEEK_END)
+        unnecessary_zeros = ord(struct.unpack('c', ifs.read(1))[0])
+
+        # get data size
+        end = ifs.tell()
         ifs.seek(4 + tree_size)
-        data = ifs.read()[:-1]
-               
-        code = []
-        bits = ""
-        ch = ""
-        path = ""
-        remaining_bits = ""
-        # loop over data
-        for i in range(len(data)):                
-            # open file for writing
-            with open(savePath, "ab") as ofs:
-                # take bits
-                bits = bin(ord(list(data)[i]))[2:]  
-                # check size
-                if len(bits) < 8:  
-                    # add zeroes to fit byte length(8 bits)
-                    bits = "{0:0>8}".format("".join(bits))
-                # add remaining bits if any    
-                bits = remaining_bits + bits
-                # delete unnecessary zeroes if last iteration is reached
-                if i is len(data) - 1:
-                    bits = bits[:-unnecessary_zeros]
-                # search character by bits
-                for bit in bits: 
-                    path += bit
-                    ch = findChar(tree, path)
-                    # write to file if found any character
-                    if ch:
-                        ofs.write(ch)
-                        path = "" 
-                        remaining_bits = ""
-                    else:  
-                        # if the given portion of code is not enough to find char
-                        # store the remaining bits 
-                        remaining_bits = path
-                path = ""
+        start = ifs.tell()
+        data_size = end - start
+
+        # restore data
+        with open(savePath, "wb") as ofs:
+            processed_bytes = 0
+            cur_node = tree
+            bits_buf = []
+            out_buf = []
+
+            while processed_bytes < data_size:
+                cur_byte = ord(ifs.read(1))
+                bits_buf.extend(cur_byte & (1 << i) for i in xrange(7, -1, -1))
+
+                if processed_bytes == data_size - 1:  # the last byte
+                    bits_buf = bits_buf[-unnecessary_zeros:]
+
+                pos = 0
+                for b in bits_buf:
+                    pos += 1
+
+                    if b:
+                        cur_node = cur_node.left
+                    else:
+                        cur_node = cur_node.right
+
+                    if cur_node.char:
+                        out_buf.append(cur_node.char)
+                        cur_node = tree
+                bits_buf = bits_buf[pos:]
+
+                if len(out_buf) > BUFSIZE:
+                    ofs.write("".join(out_buf))
+                    out_buf = []
+
+                processed_bytes += 1
+
+            if out_buf:
+                ofs.write("".join(out_buf))
+                out_buf = []
+
 
 # search char in Huffman tree by given path
 def findChar(root, path):
